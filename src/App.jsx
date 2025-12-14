@@ -1,85 +1,175 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   MapPin, Camera, HelpCircle, AlertTriangle, 
-  Clock, Award, ChevronRight, Navigation, BookOpen, Lock, Unlock 
+  Clock, Award, ChevronRight, Navigation, BookOpen, Lock, Unlock, X, Crosshair 
 } from 'lucide-react';
 
-// --- JÁTÉK ADATOK (MOST MÁR KOORDINÁTÁKKAL) ---
-// A koordináták a Badacsonyi helyszínek közelítő pontjai
+// Térkép csomagok
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
+// --- LEAFLET IKON FIX (Hogy látszódjanak a markerek) ---
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+// Egyedi ikonok
+const targetIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+// --- JÁTÉK ADATOK ---
 const STATIONS = [
   {
     id: 1,
     title: "A Padlás Titka",
     location: "Badacsonyi Tájház",
-    lat: 46.7975, // Minta koordináta (Badacsony központ)
-    lng: 17.5020,
-    letter: `
-      "Drága Barátom! 
-      Ha ezt olvasod, megtaláltad a rejtekhelyemet a régi Tájház padlásán..."
-    `,
-    task: "Keresd meg az épületrészek számaiból összeálló kódot!",
+    lat: 46.7975, lng: 17.5020,
+    letter: "Drága Barátom! Ha ezt olvasod, megtaláltad a rejtekhelyemet a régi Tájház padlásán...",
+    task: "Számold meg az ablakokat és a cserepek ritmusát!",
     answer: "1798", 
-    hints: ["Számold meg az ablakokat.", "Tetőcserepek mintázata.", "Építés éve + 8."],
-    keyword: "KÉK"
+    hints: ["Számold meg az ablakokat.", "Tetőcserepek mintázata kettesével.", "Építés éve (1790) + 8."],
+    requiresPhoto: false
   },
   {
     id: 2,
     title: "A Borkereskedő Háza",
     location: "Főutca, Régi Kereskedőház",
-    lat: 46.7930, 
-    lng: 17.5040,
-    letter: `
-      "Gratulálok! Most a Főutcán állsz..."
-    `,
-    task: "Fejtsd meg a homlokzat és a pad titkát!",
+    lat: 46.7930, lng: 17.5040,
+    letter: "Gratulálok! Most a Főutcán állsz. Ez a ház egykor a vidék leggazdagabb borkereskedőjéé volt...",
+    task: "Készíts fotót a homlokzatról és fejtsd meg a kódot!",
     answer: "BOR",
-    hints: ["Nézd a pad léceit.", "3 fő díszítőelem.", "Mindenki szereti."],
-    keyword: "NYELŰ"
+    hints: ["Nézd a pad léceit oldalról.", "3 fő díszítőelem van fent.", "Mindenki szereti inni."],
+    requiresPhoto: true // EZ A FELADAT FOTÓT KÉR
   },
-  // ... (A többi állomás ugyanígy, rövidítve a kód átláthatósága miatt)
   {
     id: 3, title: "A Présház Rejtélye", location: "Szőlőhegy", lat: 46.8010, lng: 17.4980,
-    letter: "Felfelé vezet az út...", task: "Olvasd le a kódot a présről!", answer: "450", 
-    hints: ["Akós mértékegység.", "4 óra 50 perc.", "4-5-0"], keyword: "ZAMATOS"
+    letter: "Felfelé vezet az út. Itt pihen a 'Bacchus Könnye' nevű öreg prés...", task: "Olvasd le a kódot a présről!", answer: "450", 
+    hints: ["Akós mértékegység.", "4 óra 50 perc.", "4-5-0"], requiresPhoto: false
   },
   {
     id: 4, title: "A Kápolna Üzenete", location: "Szent Donát Kápolna", lat: 46.8050, lng: 17.4950,
-    letter: "Szent Donát a védőszent...", task: "Fotózd le a részletet!", answer: "SD71", 
-    hints: ["Monogram: SD.", "Évszám vége.", "SD + 71"], keyword: "VULKÁNI"
+    letter: "Szent Donát a védőszent. De vigyázz, egy részlet csak most...", task: "Fotózd le a részletet!", answer: "SD71", 
+    hints: ["Monogram: SD.", "Évszám vége.", "SD + 71"], requiresPhoto: true
   },
   {
     id: 5, title: "A Kilátó Titka", location: "Kisfaludy-kilátó", lat: 46.8100, lng: 17.4900,
-    letter: "Pazar a kilátás...", task: "Lépcsőfokok + Hegycsúcs.", answer: "88GULACS", 
-    hints: ["88 lépcsőfok.", "Gulács hegy.", "Szám + Hegy"], keyword: "BADACSONYI"
+    letter: "Milyen pazar a kilátás! Keress egy pontot...", task: "Lépcsőfokok + Hegycsúcs.", answer: "88GULACS", 
+    hints: ["88 lépcsőfok.", "Gulács hegy.", "Szám + Hegy"], requiresPhoto: false
   },
   {
     id: 6, title: "A Pince Labirintusa", location: "Régi Borpince", lat: 46.7950, lng: 17.5010,
-    letter: "A mélyben vár a próba...", task: "Azonosítsd az eszközt!", answer: "LOPÓ", 
-    hints: ["Bort szívnak vele.", "Üveg, hosszú nyak.", "Kóstoláshoz kell."], keyword: "LEGENDÁS"
+    letter: "Már majdnem a végére értél. De a legnehezebb próba...", task: "Azonosítsd az eszközt!", answer: "LOPÓ", 
+    hints: ["Bort szívnak vele.", "Üveg, hosszú nyak.", "Kóstoláshoz kell."], requiresPhoto: false
   },
   {
     id: 7, title: "A Végső Titok", location: "Rózsakő", lat: 46.8020, lng: 17.4990,
-    letter: "Itt állunk a Rózsakőnél...", task: "Kombináld a kulcsszavakat!", answer: "KÉKNYELŰ", 
-    hints: ["Első szín.", "Második eszköz része.", "Badacsonyi fajta."], keyword: "VÉGE"
+    letter: "Itt állunk a Rózsakőnél. Nézd vissza az utadat!...", task: "Kombináld a kulcsszavakat!", answer: "KÉKNYELŰ", 
+    hints: ["Első szín.", "Második eszköz része.", "Badacsonyi fajta."], requiresPhoto: false
   }
 ];
 
-// --- SEGÉDFÜGGVÉNY: Távolság számítása (Haversine formula) ---
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // Föld sugara méterben
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
+// --- SEGÉDKOMPONENSEK ---
 
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c; // Távolság méterben
+// Térkép automatikus középre igazítása
+function MapRecenter({ lat, lng }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo([lat, lng], map.getZoom());
+  }, [lat, lng, map]);
+  return null;
 }
+
+// Élő Kamera Komponens
+function LiveCamera({ onCapture, onClose }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "environment" } // Hátsó kamera kérése
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        console.error("Kamera hiba:", err);
+        alert("Nem sikerült elérni a kamerát. Ellenőrizd a jogosultságokat!");
+        onClose();
+      }
+    }
+    setupCamera();
+
+    return () => {
+      // Stream leállítása kilépéskor
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [onClose]);
+
+  const handleCapture = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (video && canvas) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const dataUrl = canvas.toDataURL('image/jpeg');
+      onCapture(dataUrl);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          className="absolute w-full h-full object-cover"
+        />
+        {/* Célkereszt */}
+        <div className="absolute inset-0 border-2 border-white/30 m-8 rounded-lg pointer-events-none"></div>
+        
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 bg-black/50 text-white p-2 rounded-full backdrop-blur-md z-10"
+        >
+          <X size={24} />
+        </button>
+      </div>
+      
+      {/* Kamera vezérlők */}
+      <div className="h-24 bg-black flex items-center justify-center gap-8 pb-safe">
+        <button 
+          onClick={handleCapture}
+          className="w-16 h-16 rounded-full bg-white border-4 border-slate-300 flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+        >
+          <div className="w-14 h-14 rounded-full bg-white border-2 border-black"></div>
+        </button>
+      </div>
+      <canvas ref={canvasRef} className="hidden" />
+    </div>
+  );
+}
+
+// --- FŐ APP ---
 
 function App() {
   const [gameState, setGameState] = useState('WELCOME');
@@ -91,10 +181,15 @@ function App() {
   const [userInput, setUserInput] = useState("");
   const [hintsUsed, setHintsUsed] = useState(0);
   const [feedback, setFeedback] = useState(null);
-  const [isPhotoTaken, setIsPhotoTaken] = useState(false);
+  
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
+  
   const [isLocationVerified, setIsLocationVerified] = useState(false);
   const [isCheckingGPS, setIsCheckingGPS] = useState(false);
-  const [gpsError, setGpsError] = useState(null); // Ha túl messze van
+  const [userPos, setUserPos] = useState(null);
+  const [gpsError, setGpsError] = useState(null);
 
   // Időzítő
   useEffect(() => {
@@ -105,76 +200,101 @@ function App() {
     return () => clearInterval(interval);
   }, [gameState]);
 
+  // GPS követés a háttérben (a térképhez)
+  useEffect(() => {
+    if (gameState === 'PLAYING' && navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => setUserPos([pos.coords.latitude, pos.coords.longitude]),
+        (err) => console.log("GPS hiba:", err),
+        { enableHighAccuracy: true }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, [gameState]);
+
   const formatTime = (seconds) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
+    const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${h}:${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+    return `${m}:${s < 10 ? '0'+s : s}`;
   };
 
   const startGame = () => {
     setGameState('PLAYING');
     setStartTime(Date.now());
     setCurrentStageIndex(0);
+    if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+    }
   };
 
-  // --- VALÓDI GPS ELLENŐRZÉS ---
   const verifyLocation = () => {
-    if (!navigator.geolocation) {
-      setFeedback({ type: 'error', msg: 'A böngésződ nem támogatja a helymeghatározást.' });
-      return;
-    }
-
+    if (!navigator.geolocation) return;
     setIsCheckingGPS(true);
-    setFeedback({ type: 'info', msg: 'Műholdak keresése... Maradj egy helyben!' });
+    setFeedback({ type: 'info', msg: 'Pozíció keresése...' });
     setGpsError(null);
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const userLat = position.coords.latitude;
-        const userLng = position.coords.longitude;
-        const target = STATIONS[currentStageIndex];
+        // Haversine távolság számítás (egyszerűsítve)
+        const lat1 = position.coords.latitude;
+        const lon1 = position.coords.longitude;
+        const lat2 = STATIONS[currentStageIndex].lat;
+        const lon2 = STATIONS[currentStageIndex].lng;
         
-        // Távolság számítása
-        const distance = calculateDistance(userLat, userLng, target.lat, target.lng);
-        
-        setIsCheckingGPS(false);
+        const R = 6371e3; 
+        const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+        const Δφ = (lat2-lat1) * Math.PI/180, Δλ = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const dist = R * c;
 
-        // 50 méteres körzetet engedünk meg
-        if (distance <= 50) {
+        setIsCheckingGPS(false);
+        setUserPos([lat1, lon1]);
+
+        if (dist <= 50) {
           setIsLocationVerified(true);
-          setFeedback({ type: 'success', msg: 'Megérkeztél a helyszínre! A levél feloldva.' });
+          setFeedback({ type: 'success', msg: 'Megérkeztél!' });
         } else {
-          // Ha túl messze van
-          let distanceText = distance < 1000 
-            ? `${Math.round(distance)} méterre` 
-            : `${(distance / 1000).toFixed(1)} km-re`;
-            
-          setGpsError(`Túl messze vagy a céltól (${distanceText})!`);
+          setGpsError(`Túl messze vagy! (${dist < 1000 ? Math.round(dist) + "m" : (dist/1000).toFixed(1) + "km"})`);
           setFeedback({ type: 'error', msg: 'Nem vagy a helyszínen.' });
         }
       },
       (error) => {
         setIsCheckingGPS(false);
-        setFeedback({ type: 'error', msg: 'Hiba a helymeghatározásnál: ' + error.message });
+        setFeedback({ type: 'error', msg: 'GPS Hiba' });
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true }
     );
   };
 
-  // FEJLESZTŐI KISKAPU (Csak teszteléshez, ha a GPS nem enged)
   const devBypass = () => {
-    if (window.confirm("FEJLESZTŐI MÓD: Biztosan átugrod a GPS ellenőrzést?")) {
+    if (window.confirm("DEV MODE: Ugrás a helyszínre?")) {
       setIsLocationVerified(true);
       setGpsError(null);
-      setFeedback({ type: 'success', msg: 'DEV MÓD: Helyszín feloldva.' });
+      // Fake pozíció beállítása a célra
+      setUserPos([STATIONS[currentStageIndex].lat, STATIONS[currentStageIndex].lng]); 
+      setFeedback({ type: 'success', msg: 'DEV MODE: Feloldva.' });
     }
+  };
+
+  const handlePhotoCapture = (photoData) => {
+    setCapturedPhoto(photoData);
+    setIsCameraOpen(false);
+    setScore(prev => prev + 50);
+    setFeedback({ type: 'success', msg: 'Fotó rögzítve! (+50p)' });
   };
 
   const submitAnswer = () => {
     const currentStage = STATIONS[currentStageIndex];
+    // Ellenőrizzük, hogy kell-e fotó
+    if (currentStage.requiresPhoto && !capturedPhoto) {
+      setFeedback({ type: 'error', msg: 'Ehhez a feladathoz fotó szükséges!' });
+      return;
+    }
+
     if (userInput.trim().toUpperCase() === currentStage.answer.toUpperCase()) {
-      setFeedback({ type: 'success', msg: 'Helyes megfejtés!' });
+      setFeedback({ type: 'success', msg: 'HELYES!' });
+      document.activeElement.blur();
       setTimeout(() => {
         setScore(prev => prev + 100);
         if (currentStageIndex < STATIONS.length - 1) {
@@ -182,188 +302,233 @@ function App() {
           // Reset
           setUserInput("");
           setHintsUsed(0);
-          setIsPhotoTaken(false);
+          setCapturedPhoto(null);
           setIsLocationVerified(false);
           setFeedback(null);
           setGpsError(null);
+          window.scrollTo(0,0);
         } else {
           setGameState('FINISHED');
         }
-      }, 1500);
+      }, 1000);
     } else {
-      setFeedback({ type: 'error', msg: 'Hibás kód! Próbáld újra.' });
+      setFeedback({ type: 'error', msg: 'Hibás kód!' });
     }
   };
 
-  const requestHint = () => {
-    if (hintsUsed < 3) {
-      setHintsUsed(prev => prev + 1);
-      setScore(prev => Math.max(0, prev - 50));
-    }
-  };
-
-  // --- RENDER ---
   const currentStage = STATIONS[currentStageIndex];
 
+  // --- RENDER ---
+
   if (gameState === 'WELCOME') return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white bg-[url('https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb')] bg-cover bg-center bg-blend-overlay bg-black/60">
-      <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-emerald-400 to-cyan-500 text-transparent bg-clip-text">Legends of the Lake</h1>
-      <button onClick={startGame} className="w-full max-w-sm py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold mt-8 shadow-lg cursor-pointer">
-        Játék Indítása (GPS Szükséges)
+    <div className="min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white bg-[url('https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb')] bg-cover bg-center bg-black/60 bg-blend-overlay">
+      <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-emerald-400 to-cyan-500 text-transparent bg-clip-text">Legends of the Lake</h1>
+      <button onClick={startGame} className="w-full max-w-sm py-4 bg-emerald-600 active:bg-emerald-700 text-white rounded-xl font-bold text-lg mt-8 shadow-lg">
+        START
       </button>
     </div>
   );
 
   if (gameState === 'FINISHED') return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-      <Award size={80} className="text-yellow-400 mb-6" />
-      <h2 className="text-4xl font-bold">Gratulálunk!</h2>
-      <p className="mt-4 text-xl">Végső pontszám: {score}</p>
+    <div className="min-h-[100dvh] bg-slate-900 flex flex-col items-center justify-center p-8 text-white text-center">
+      <Award size={96} className="text-yellow-400 mb-6 animate-bounce" />
+      <h2 className="text-3xl font-bold mb-2">Gratulálunk!</h2>
+      <p className="text-6xl font-mono font-bold text-emerald-400 my-4">{score}</p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 pb-24">
-      {/* HEADER */}
-      <header className="fixed top-0 w-full bg-slate-900/90 backdrop-blur-md border-b border-slate-800 z-50 px-4 py-3 flex justify-between items-center shadow-lg">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-emerald-900/50 flex items-center justify-center border border-emerald-500/30 font-bold text-emerald-400">
-            {currentStageIndex + 1}/7
+    <div className="min-h-[100dvh] bg-slate-950 text-slate-200 flex flex-col relative">
+      
+      {/* KAMERA MODAL */}
+      {isCameraOpen && (
+        <LiveCamera onCapture={handlePhotoCapture} onClose={() => setIsCameraOpen(false)} />
+      )}
+
+      {/* TÉRKÉP MODAL */}
+      {isMapOpen && (
+        <div className="fixed inset-0 z-[90] bg-slate-900 flex flex-col">
+          <div className="h-14 bg-slate-900 border-b border-slate-800 flex justify-between items-center px-4">
+            <h3 className="font-bold text-white">Térkép</h3>
+            <button onClick={() => setIsMapOpen(false)} className="p-2 bg-slate-800 rounded-full">
+              <X size={20} />
+            </button>
           </div>
-          <span className="font-bold hidden sm:block">Legends of the Lake</span>
+          <div className="flex-1 relative">
+            <MapContainer 
+              center={[currentStage.lat, currentStage.lng]} 
+              zoom={15} 
+              style={{ height: "100%", width: "100%" }}
+            >
+              <TileLayer
+                attribution='&copy; OpenStreetMap'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {/* Célállomás */}
+              <Marker position={[currentStage.lat, currentStage.lng]} icon={targetIcon}>
+                <Popup>{currentStage.title}</Popup>
+              </Marker>
+              
+              {/* Célállomás zóna (50m) */}
+              <Circle 
+                center={[currentStage.lat, currentStage.lng]} 
+                radius={50} 
+                pathOptions={{ color: 'red', fillColor: 'red', fillOpacity: 0.1 }} 
+              />
+
+              {/* Játékos pozíciója */}
+              {userPos && (
+                <>
+                  <Marker position={userPos}>
+                    <Popup>Te itt vagy</Popup>
+                  </Marker>
+                  <MapRecenter lat={userPos[0]} lng={userPos[1]} />
+                </>
+              )}
+            </MapContainer>
+            
+            {!userPos && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1 rounded-full z-[400] backdrop-blur-md">
+                GPS jel keresése...
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex gap-4 font-mono">
-          <span className="text-yellow-500 flex items-center gap-1"><Award size={16}/> {score}</span>
-          <span className="text-cyan-400 flex items-center gap-1"><Clock size={16}/> {formatTime(elapsedTime)}</span>
+      )}
+
+      {/* FIX HEADER */}
+      <header className="fixed top-0 w-full bg-slate-900/95 backdrop-blur-md border-b border-slate-800 z-50 px-4 h-14 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-emerald-700 flex items-center justify-center font-bold text-white text-sm">
+            {currentStageIndex + 1}
+          </div>
+          <span className="font-bold text-sm text-white">Legend</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs font-mono">
+          <span className="text-yellow-500 flex gap-1"><Award size={12}/>{score}</span>
         </div>
       </header>
 
-      <main className="pt-20 px-4 max-w-2xl mx-auto space-y-6">
-        <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
-          <div className="bg-slate-800/50 p-4 border-b border-slate-700 flex justify-between items-center">
+      {/* FLOATING MAP BUTTON (Mindig látszik) */}
+      {!isMapOpen && !isCameraOpen && (
+        <button 
+          onClick={() => setIsMapOpen(true)}
+          className="fixed bottom-24 right-4 z-40 bg-blue-600 text-white p-4 rounded-full shadow-xl shadow-blue-900/50 hover:bg-blue-500 active:scale-95 transition-transform"
+        >
+          <MapPin size={24} />
+        </button>
+      )}
+
+      {/* MAIN CONTENT */}
+      <main className="flex-1 pt-20 pb-32 px-4 w-full max-w-md mx-auto">
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl mb-4">
+          <div className="bg-slate-800/80 p-4 border-b border-slate-700 flex justify-between items-start">
             <div>
-              <h2 className="text-xl font-bold text-white">{currentStage.title}</h2>
-              <div className="flex items-center gap-1 text-sm text-slate-400 mt-1">
-                <MapPin size={14} /> {currentStage.location}
+              <h2 className="font-bold text-white text-lg">{currentStage.title}</h2>
+              <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                <MapPin size={12} /> {currentStage.location}
               </div>
             </div>
-            
-            {isLocationVerified ? (
-              <span className="text-emerald-500 flex items-center gap-1 text-xs font-bold bg-emerald-900/20 px-2 py-1 rounded-full border border-emerald-900/50">
-                <Unlock size={12} /> Helyszínen
-              </span>
-            ) : (
-              <span className="text-red-400 flex items-center gap-1 text-xs font-bold bg-red-900/20 px-2 py-1 rounded-full border border-red-900/50">
-                <Lock size={12} /> Lezárva
-              </span>
-            )}
+            {isLocationVerified ? <Unlock size={18} className="text-emerald-500" /> : <Lock size={18} className="text-slate-600" />}
           </div>
 
-          <div className="p-6">
+          <div className="p-5">
             {!isLocationVerified ? (
-              <div className="text-center py-8 space-y-6">
-                <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                   <Navigation size={40} className={`text-slate-500 ${isCheckingGPS ? 'animate-pulse text-blue-400' : ''}`} />
-                   {isCheckingGPS && <span className="absolute inset-0 border-4 border-blue-500/30 rounded-full animate-ping"></span>}
-                </div>
-                
-                <p className="text-slate-400 px-4">
-                  A feladat megtekintéséhez a helyszínen kell lenned ({currentStage.location}).
-                </p>
-
-                {gpsError && (
-                  <div className="bg-red-900/20 border border-red-500/30 p-3 rounded-lg text-red-300 text-sm font-bold">
-                    ⚠️ {gpsError}
-                  </div>
-                )}
-                
-                <button 
-                  onClick={verifyLocation}
-                  disabled={isCheckingGPS}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-xl font-bold transition-all cursor-pointer shadow-lg shadow-blue-900/20"
-                >
-                  {isCheckingGPS ? "Műholdak keresése..." : "GPS Helyzet Ellenőrzése"}
+              <div className="text-center py-6 space-y-4">
+                <p className="text-sm text-slate-400">Menj a helyszínre a feladatért!</p>
+                {gpsError && <div className="text-xs bg-red-900/20 text-red-300 p-2 rounded">⚠️ {gpsError}</div>}
+                <button onClick={verifyLocation} disabled={isCheckingGPS} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm shadow-lg">
+                  {isCheckingGPS ? "Keresés..." : "ITT VAGYOK"}
                 </button>
-
-                {/* FEJLESZTŐI GOMB - Csak akkor jelenik meg, ha hiba van, hogy tudd tesztelni */}
-                {gpsError && (
-                  <button 
-                    onClick={devBypass}
-                    className="mt-4 text-xs text-slate-600 hover:text-slate-400 underline cursor-pointer"
-                  >
-                    [DEV MODE] Ugrás a helyszínre (Teszteléshez)
-                  </button>
-                )}
+                {gpsError && <button onClick={devBypass} className="text-[10px] text-slate-600 mt-2">[DEV BYPASS]</button>}
               </div>
             ) : (
-              // TARTALOM (Ha a GPS sikeres)
-              <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
-                <div className="prose prose-invert bg-slate-950/50 p-4 rounded-xl border border-slate-800 italic text-slate-300 font-serif">
-                  <BookOpen size={20} className="text-emerald-500 mb-2" />
+              <div className="space-y-5 animate-in fade-in zoom-in-95 duration-300">
+                <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50 text-slate-300 text-sm font-serif italic">
+                  <BookOpen size={16} className="text-emerald-600 mb-2 opacity-50" />
                   {currentStage.letter}
                 </div>
                 
-                <div className="bg-emerald-900/10 border border-emerald-500/20 p-4 rounded-xl">
-                  <h3 className="font-bold text-emerald-400 mb-1 flex items-center gap-2">
-                    <AlertTriangle size={18} /> Feladat
+                <div className="bg-emerald-950/30 border border-emerald-500/20 p-4 rounded-xl">
+                  <h3 className="font-bold text-emerald-400 text-xs uppercase tracking-wider mb-2 flex gap-2">
+                    <AlertTriangle size={14} /> Feladat
                   </h3>
-                  <p>{currentStage.task}</p>
+                  <p className="text-sm font-medium text-slate-200">{currentStage.task}</p>
                 </div>
 
-                <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={userInput}
-                      onChange={(e) => setUserInput(e.target.value)}
-                      placeholder="Írd be a kódot..."
-                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono uppercase focus:border-emerald-500 outline-none"
-                    />
+                {/* KAMERA GOMB (Ha a feladat kéri) */}
+                {currentStage.requiresPhoto && (
+                  <div className="space-y-2">
                     <button 
-                      onClick={submitAnswer}
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 rounded-xl font-bold cursor-pointer"
+                      onClick={() => setIsCameraOpen(true)}
+                      className={`w-full py-3 rounded-xl border border-dashed flex items-center justify-center gap-2 text-sm font-bold transition-all
+                        ${capturedPhoto 
+                          ? 'bg-green-900/10 border-green-500 text-green-500' 
+                          : 'bg-slate-800 border-slate-600 text-blue-400 hover:bg-slate-700'}`}
                     >
-                      <ChevronRight />
+                      <Camera size={18} />
+                      {capturedPhoto ? "Új fotó készítése" : "Kamera megnyitása"}
                     </button>
+                    
+                    {capturedPhoto && (
+                      <div className="relative w-full h-32 bg-black rounded-lg overflow-hidden border border-slate-700">
+                        <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover opacity-70" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="bg-green-600 text-white text-xs px-2 py-1 rounded-full flex gap-1 items-center">
+                            <Award size={10} /> Fotó rögzítve
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
+
+                <div className="flex gap-2 h-12">
+                  <input 
+                    type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)}
+                    placeholder="KÓD..."
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 text-[16px] text-white font-mono uppercase focus:border-emerald-500 outline-none"
+                  />
+                  <button onClick={submitAnswer} className="bg-emerald-600 text-white px-5 rounded-xl flex items-center justify-center active:scale-95 transition-transform">
+                    <ChevronRight size={24} />
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
-        
-        {/* Hiba/Siker üzenet sáv */}
+
+        {/* Feedback Toast */}
         {feedback && (
-          <div className={`p-4 rounded-xl border text-center font-bold
-            ${feedback.type === 'success' ? 'bg-green-900/50 border-green-500 text-green-400' : 
-              feedback.type === 'error' ? 'bg-red-900/50 border-red-500 text-red-400' : 
-              'bg-blue-900/50 border-blue-500 text-blue-400 animate-pulse'}`}>
+          <div className={`fixed top-20 left-1/2 -translate-x-1/2 w-[90%] max-w-sm p-3 rounded-xl border text-center font-bold text-sm shadow-2xl z-[60] animate-in slide-in-from-top-4 fade-in duration-300
+            ${feedback.type === 'success' ? 'bg-green-900/90 border-green-500 text-green-400' : 
+              feedback.type === 'error' ? 'bg-red-900/90 border-red-500 text-red-200' : 
+              'bg-blue-900/90 border-blue-500 text-blue-200'}`}>
             {feedback.msg}
           </div>
         )}
       </main>
 
-      {/* FOOTER - Tippek */}
+      {/* FOOTER - Hint System */}
       {isLocationVerified && (
-        <div className="fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 p-4 backdrop-blur-md">
-          <div className="max-w-2xl mx-auto flex justify-center gap-4">
-             {[0, 1, 2].map((idx) => (
-                <button 
-                  key={idx}
-                  onClick={requestHint}
-                  disabled={hintsUsed > idx}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center border transition-all
-                    ${hintsUsed > idx ? 'bg-slate-800 border-slate-700 text-slate-500' : 
-                      hintsUsed === idx ? 'bg-yellow-500/20 border-yellow-500 text-yellow-500 animate-bounce cursor-pointer' : 
-                      'bg-slate-900 border-slate-700 text-slate-600'}`}
-                >
-                  <HelpCircle size={20} />
-                </button>
-             ))}
-          </div>
-          {hintsUsed > 0 && (
-             <p className="text-center text-yellow-400 text-sm mt-2 font-bold bg-yellow-900/20 py-2 rounded-lg max-w-2xl mx-auto">
-               Tipp: {currentStage.hints[hintsUsed - 1]} (-50 pont)
-             </p>
-          )}
+        <div className="fixed bottom-0 w-full bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 pb-safe pt-3 px-4 z-40">
+           <div className="max-w-md mx-auto flex justify-between items-center pb-4">
+             <span className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Segítség</span>
+             <div className="flex gap-3">
+               {[0, 1, 2].map((idx) => (
+                 <button 
+                   key={idx}
+                   onClick={() => { if(hintsUsed <= idx) { setHintsUsed(h => h+1); setScore(s => Math.max(0, s-50)); } }}
+                   disabled={hintsUsed > idx}
+                   className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all touch-manipulation
+                     ${hintsUsed > idx ? 'bg-slate-800 border-slate-700 text-slate-600' : 
+                       'bg-slate-900 border-slate-700 text-yellow-500 hover:border-yellow-500'}`}
+                 >
+                   <HelpCircle size={18} />
+                 </button>
+               ))}
+             </div>
+           </div>
         </div>
       )}
     </div>
